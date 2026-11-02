@@ -1,14 +1,19 @@
-# Deploying the LLM budget proxy on Google Cloud
+# Deploying the Jurong Marine LLM budget proxy on Google Cloud
 
-How to run the LiteLLM budget proxy on a Google Cloud Compute Engine VM with HTTPS, so every teammate and the application backend can reach it.
+How to run the LiteLLM budget proxy (this kit) on a Google Cloud Compute Engine
+VM with HTTPS, so every teammate and the Java backend can reach it.
 
-> **Our deployment:** `https://34-142-197-181.sslip.io` (VM `llm-proxy`, Ubuntu 24.04 minimal).
-> Dashboard: `https://34-142-197-181.sslip.io/ui`
+> **Our deployment:** `https://35-240-177-226.sslip.io` (VM `llm-proxy`, e2-small, asia-southeast1 / Singapore, Ubuntu 24.04 minimal, static IP `35.240.177.226`).
+> Dashboard: `https://35-240-177-226.sslip.io/ui`
 
-```
-teammates / app backend ──HTTPS──▶ Caddy :443 ──▶ LiteLLM :4000 (localhost only) ──▶ OpenAI
-                                    (VM llm-proxy)        │
-                                                      Postgres (Docker volume)
+```mermaid
+flowchart LR
+    T["Teammates<br/>Java backend"] -->|"HTTPS :443"| C
+    subgraph VM["VM llm-proxy"]
+        C["Caddy<br/>TLS via sslip.io"] --> L["LiteLLM :4000<br/>localhost only"]
+        L <--> D[("Postgres<br/>Docker volume")]
+    end
+    L -->|real key| O["OpenAI"]
 ```
 
 | Piece | Choice | Why |
@@ -164,8 +169,8 @@ sslip.io turns an IP into a hostname. **Every dot becomes a dash:**
 
 | IP | Hostname |
 |---|---|
-| `34.142.197.181` | `34-142-197-181.sslip.io` ✅ |
-| | `34-142.197.181.sslip.io` ❌ (dots left in, so the name doesn't resolve) |
+| `35.240.177.226` | `35-240-177-226.sslip.io` ✅ |
+| | `35-240.177.226.sslip.io` ❌ (dots left in, so the name doesn't resolve) |
 
 Build it automatically on the VM so it can't be mistyped:
 
@@ -221,7 +226,7 @@ Send each teammate privately:
 - `examples/python_client.py` or `examples/java/ProxyClientExample.java`
 
 ```python
-client = OpenAI(base_url="https://34-142-197-181.sslip.io", api_key="<member key>")
+client = OpenAI(base_url="https://35-240-177-226.sslip.io", api_key="<member key>")
 ```
 
 ---
@@ -236,8 +241,9 @@ client = OpenAI(base_url="https://34-142-197-181.sslip.io", api_key="<member key
 | Caddy logs | `docker logs -f caddy` |
 | Apply `docker-compose.yml` change | `docker compose up -d` |
 | Apply `config.yaml` change | `docker compose restart litellm` |
-| Add a member | edit `members.json`, then `python3 setup_keys.py` |
-| Raise a cap / block a key | dashboard → Virtual Keys, or see README "Common changes" |
+| Add / change / remove members | edit `members.json`, then `python3 setup_keys.py --sync` (no restart) |
+| Preview member changes | `python3 setup_keys.py --sync --dry-run` |
+| Rename a member | `python3 setup_keys.py --rename OLD NEW` (never by editing `members.json` alone) |
 | Stop (keeps data) | `docker compose down` |
 | ⚠️ Wipe everything | `docker compose down -v` deletes all keys and spend history |
 
@@ -266,7 +272,7 @@ docker compose exec db pg_dump -U litellm litellm > backup_$(date +%F).sql
 | LiteLLM keeps restarting | Out of memory | Check swap (`free -h`); else upgrade to e2-small (below) |
 | Client gets `ExceededTokenBudget` / budget error | Cap reached | Expected. Raise the cap or wait for the reset |
 | Spend stays $0 right after a call | Spend is written in batches | Wait ~1 minute |
-| URL stopped working after restart | IP wasn't static | Reserve a static IP (step 1), rerun Caddy with new host |
+| URL stopped working after VM stop/start | IP was ephemeral, not static | Promote the current IP: `gcloud compute addresses create llm-proxy-static --addresses=<NEW_IP> --region=$REGION`, then rerun Caddy (step 5) and send teammates the new URL. Delete any unused reserved address (`gcloud compute addresses list`), since idle reserved IPs are billed |
 
 **Upgrade to e2-small** (2 GB RAM, ~US$12–15/month, or covered by the credits), from Cloud Shell:
 

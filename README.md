@@ -17,9 +17,9 @@ flowchart LR
 
 | Layer | Where it's set | Default here | What happens when hit |
 |---|---|---|---|
-| Per-member key | `members.json` | $3 each, $8 for backend / 30 days | Only that key is blocked |
-| Team | `members.json` → `team` | $18 / 30 days | All member keys blocked |
-| Global proxy | `config.yaml` → `max_budget` | $18 / 30 days | Every request blocked |
+| Per-member key | `members.json` | $10 each, $10 for project / 30 days | Only that key is blocked |
+| Team | `members.json` → `team` | $50 / 30 days | All member keys blocked |
+| Global proxy | `config.yaml` → `max_budget` | $50 / 30 days | Every request blocked |
 | OpenAI project limit | Instructor's dashboard | whatever they set | OpenAI returns `insufficient_quota` |
 
 Set the team and global caps **a little below** the real budget. LiteLLM
@@ -93,6 +93,86 @@ sees a removal and an addition in the same run.
 
 **Leaked key:** remove the member, `--sync` (blocks it), add them back under a
 new name such as `alice-2`, `--sync` again, and send the new key.
+
+## Response time tuning
+
+A healthy proxy adds roughly **0.3–0.5 s** on top of OpenAI's own response time.
+If calls feel slow, measure first, then fix the slowest part.
+
+### Measure
+
+Replace `<HOST>` with the proxy URL (e.g. `https://35-240-177-226.sslip.io`).
+
+```bash
+# a) Proxy only: network + HTTPS + Caddy, no OpenAI involved (from your laptop)
+curl -s -o /dev/null -w "a total %{time_total}s\n" <HOST>/health/liveliness
+
+# b) OpenAI directly, bypassing the proxy (on the VM, in the kit folder)
+curl -s -o /dev/null -w "b total %{time_total}s\n" https://api.openai.com/v1/chat/completions \
+  -H "Authorization: Bearer $(grep ^OPENAI_API_KEY .env | cut -d= -f2)" -H "Content-Type: application/json" \
+  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Say hi"}],"max_tokens":20}'
+
+# c) Same request through the proxy (from your laptop; run 3x, since the first call warms the key cache)
+for i in 1 2 3; do
+curl -s -o /dev/null -w "c total %{time_total}s\n" <HOST>/v1/chat/completions \
+  -H "Authorization: Bearer <member key>" -H "Content-Type: application/json" \
+  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Say hi"}],"max_tokens":20}'
+done
+```
+
+While (c) runs, check the VM in a second SSH window: `docker stats --no-stream` and `free -h`.
+
+### Read the results
+
+| Result | Bottleneck | Go to |
+|---|---|---|
+| (a) > ~1 s | Network, Caddy or an overloaded VM | VM size; check `docker logs caddy` |
+| (c) − (b) > ~1 s | LiteLLM / VM (CPU, memory, swap) | VM size, then logging |
+| (b) itself slow | OpenAI: model and answer length | Client-side |
+| Only the first (c) is slow | Normal warm-up (key cache, connections) | Nothing to fix |
+
+### Fixes, in order of impact
+
+**1. VM size.** LiteLLM checks the key, budget and cost on every request, and Postgres
+writes the spend. On a 1 GB e2-micro this swaps and throttles.
+
+| VM | Our measurement (b → c) | Notes |
+|---|---|---|
+| e2-micro (1 GB) | 2.0 s → **6.3 s** (+4.3 s) | Too small |
+| e2-small (2 GB) | (c) **1.4–1.5 s** over 3 runs | ✅ Current deployment. Proxy overhead is now negligible |
+| e2-medium (4 GB) | | Next step if e2-small is still slow |
+
+Resize steps are in `README-setup-gcp.md` → Troubleshooting. Make sure the IP is
+static first.
+
+**2. Quieter logging.** Add this under the `litellm` service's `environment:` in
+`docker-compose.yml`, then run `docker compose up -d`:
+
+```yaml
+      LITELLM_LOG: "ERROR"
+```
+
+**3. Skip per-request log rows** (only if still slow). Add this under `general_settings:`
+in `config.yaml`, then run `docker compose restart litellm`:
+
+```yaml
+  disable_spend_logs: true
+```
+
+Budgets and per-key spend are still tracked and enforced; you lose only the
+request-by-request history on the dashboard's **Logs** page.
+
+**4. Client-side** (these often matter more than anything on the server):
+
+- **Stream responses** (`stream=True` in Python, `createStreaming` in Java). The first words
+  appear in under a second instead of after the full answer.
+- Prefer `gpt-4o-mini` over `gpt-4o` where quality allows.
+- Keep `max_tokens` / `maxCompletionTokens` low. Output length dominates response time.
+- Reuse one client object per process, so HTTPS connections are kept alive between calls.
+
+**Region:** a Singapore VM is the right choice for a Singapore team. Each request
+crosses the Pacific once either way, and new HTTPS handshakes stay short. Moving
+the VM to the US won't make it faster.
 
 ## Where to host it so teammates can reach it
 
