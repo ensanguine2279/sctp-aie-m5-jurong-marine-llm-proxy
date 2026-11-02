@@ -4,6 +4,9 @@ One server holds the instructor's OpenAI key. Everyone else (Python scripts,
 the Java backend) talks to this proxy with their **own virtual key**, and the
 proxy enforces spending caps and logs every call.
 
+> **Live deployment:** `https://35-240-177-226.sslip.io` on Google Cloud (Singapore, e2-small).
+> To deploy or rebuild it, follow **[Deploying on Google Cloud](README-setup-gcp.md)**.
+
 ```mermaid
 flowchart LR
     A["alice.py"] -->|member key| P
@@ -27,7 +30,9 @@ calculates cost from list prices, so its numbers are close estimates, not the bi
 
 ## 1. Start the proxy (admin, once)
 
-Needs Docker Desktop (or Docker Engine + Compose).
+Needs Docker Desktop (or Docker Engine + Compose). These steps run the proxy on
+one machine; for the full Google Cloud setup (VM, static IP, HTTPS) see
+[Deploying on Google Cloud](README-setup-gcp.md).
 
 ```bash
 cp .env.example .env       # then edit .env: paste the OpenAI key, generate secrets
@@ -142,8 +147,8 @@ writes the spend. On a 1 GB e2-micro this swaps and throttles.
 | e2-small (2 GB) | (c) **1.4–1.5 s** over 3 runs | ✅ Current deployment. Proxy overhead is now negligible |
 | e2-medium (4 GB) | | Next step if e2-small is still slow |
 
-Resize steps are in `README-setup-gcp.md` → Troubleshooting. Make sure the IP is
-static first.
+Resize steps are in [Deploying on Google Cloud → Troubleshooting](README-setup-gcp.md#troubleshooting).
+Make sure the IP is static first.
 
 **2. Quieter logging.** Add this under the `litellm` service's `environment:` in
 `docker-compose.yml`, then run `docker compose up -d`:
@@ -178,9 +183,10 @@ the VM to the US won't make it faster.
 
 - **Testing:** `localhost:4000` only works on your own machine.
 - **Same network:** `http://<your-LAN-IP>:4000`. Works on home Wi-Fi; campus Wi-Fi often blocks it.
-- **Small cloud VM** (any provider's free or cheapest tier, ~1 GB RAM is enough): install
+- **Small cloud VM** (2 GB RAM or more; 1 GB proved too slow, see Response time tuning): install
   Docker, copy this folder, `docker compose up -d`. Put HTTPS in front (e.g. Caddy) or at
   least restrict the firewall so port 4000 isn't open to the whole internet.
+  Our setup: [Deploying on Google Cloud](README-setup-gcp.md).
 - **Temporary tunnel:** `cloudflared tunnel --url http://localhost:4000` gives an HTTPS URL
   while your laptop is on. Fine for a demo, not for daily use.
 
