@@ -1,15 +1,16 @@
-# Capstone LLM budget proxy (LiteLLM)
+# Jurong Marine LLM budget proxy
 
 One server holds the instructor's OpenAI key. Everyone else (Python scripts,
 the Java backend) talks to this proxy with their **own virtual key**, and the
 proxy enforces spending caps and logs every call.
 
-```
-alice.py ─┐
-bob.py   ─┼─ member key ─▶  LiteLLM proxy :4000  ── real key ──▶  OpenAI
-backend  ─┘                 (checks budget, logs cost)
-                                   │
-                               Postgres (keys, spend)
+```mermaid
+flowchart LR
+    A["alice.py"] -->|member key| P
+    B["bob.py"] -->|member key| P
+    J["Java backend"] -->|member key| P
+    P["LiteLLM proxy :4000<br/>checks budget, logs cost"] -->|real key| O["OpenAI"]
+    P <--> D[("Postgres<br/>keys, spend")]
 ```
 
 ## Budget layers
@@ -69,12 +70,29 @@ Full examples with budget-error handling: `examples/python_client.py`,
 - Dashboard: `http://<proxy-host>:4000/ui`, log in as `admin` / `UI_PASSWORD`.
   It shows spend per key and model, and a log of each request.
 
-## Common changes
+## Managing members
 
-- **Raise someone's cap:** in the dashboard edit the key, or
-  `curl -X POST $PROXY_URL/key/update -H "Authorization: Bearer $LITELLM_MASTER_KEY" -H "Content-Type: application/json" -d '{"key":"sk-...","max_budget":5}'`
-- **Block a leaked key:** `POST /key/block` with `{"key":"sk-..."}`, or delete it in the dashboard, then issue a new one.
-- **Add a member:** add them to `members.json` and run `python setup_keys.py` again.
+`members.json` is the source of truth. LiteLLM never reads it; `setup_keys.py`
+applies it. **No restart is needed for any of these.** Key changes take effect within ~1 minute.
+
+| Change | Command |
+|---|---|
+| Add a member | Add to `members.json`, then `python setup_keys.py` (or `--sync`) |
+| Change budget / models / `rpm_limit` / `tpm_limit` | Edit `members.json`, then `python setup_keys.py --sync` |
+| Change the team budget | Edit `team` in `members.json`, then `python setup_keys.py --sync` |
+| Remove a member | Delete from `members.json`, then `python setup_keys.py --sync` (key is **blocked**, spend history kept) |
+| Bring a removed member back | Add them back, then `--sync` (same key is unblocked) |
+| **Rename** a member | `python setup_keys.py --rename OLD NEW` (same key, budget and history) |
+| Preview any sync | `python setup_keys.py --sync --dry-run` |
+
+`--sync` shows the planned changes and asks before applying (`--yes` skips the prompt).
+
+⚠️ **Never rename by editing `members.json` and running `--sync`.** That blocks the
+old key and creates a new one with a fresh budget. `--sync` warns you if it
+sees a removal and an addition in the same run.
+
+**Leaked key:** remove the member, `--sync` (blocks it), add them back under a
+new name such as `alice-2`, `--sync` again, and send the new key.
 
 ## Where to host it so teammates can reach it
 

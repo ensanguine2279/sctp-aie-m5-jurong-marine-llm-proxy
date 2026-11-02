@@ -27,6 +27,6 @@ litellm_settings:
   # Global cap across ALL keys. Once total spend reaches this, every request
   # is refused until the period resets. Set it a little BELOW the budget the
   # instructor gave you, because LiteLLM's cost figures are estimates.
-  max_budget: 18.0        # USD
+  max_budget: 50.0        # USD
   budget_duration: 30d    # resets every 30 days; remove for a one-off lifetime cap
   drop_params: true       # silently drop params a model doesn't support
