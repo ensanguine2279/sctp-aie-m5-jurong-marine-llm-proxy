@@ -1,0 +1,32 @@
+# Which models the proxy exposes, and the overall safety cap.
+# Clients send the `model_name` value as their `model`.
+# Only models listed here can be used, so keep this to the ones the course allows.
+
+model_list:
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+
+  # Add more models in the same shape, e.g.:
+  # - model_name: text-embedding-3-small
+  #   litellm_params:
+  #     model: openai/text-embedding-3-small
+  #     api_key: os.environ/OPENAI_API_KEY
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/DATABASE_URL
+
+litellm_settings:
+  # Global cap across ALL keys. Once total spend reaches this, every request
+  # is refused until the period resets. Set it a little BELOW the budget the
+  # instructor gave you, because LiteLLM's cost figures are estimates.
+  max_budget: 18.0        # USD
+  budget_duration: 30d    # resets every 30 days; remove for a one-off lifetime cap
+  drop_params: true       # silently drop params a model doesn't support
