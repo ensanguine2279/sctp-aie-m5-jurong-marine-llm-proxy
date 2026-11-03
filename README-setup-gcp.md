@@ -237,6 +237,7 @@ client = OpenAI(base_url="https://35-240-177-226.sslip.io", api_key="<member key
 |---|---|
 | Status | `docker compose ps` and `docker ps` |
 | Spend report | `python3 spend_report.py` |
+| Daily tokens & cost | `python3 daily_report.py` (`--days 30`, `--by model`, `--csv usage.csv`) |
 | LiteLLM logs | `docker compose logs -f litellm` |
 | Caddy logs | `docker logs -f caddy` |
 | Apply `docker-compose.yml` change | `docker compose up -d` |

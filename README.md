@@ -115,8 +115,30 @@ endpoint is allowed.
 ## 4. Watch spending (admin)
 
 - `python spend_report.py` prints team and per-member spend vs. cap.
+- `python daily_report.py` prints daily tokens and cost (see below).
 - Dashboard: `http://<proxy-host>:4000/ui`, log in as `admin` / `UI_PASSWORD`.
   It shows spend per key and model, and a log of each request.
+
+### Daily usage report
+
+`daily_report.py` reads every logged request from the proxy database and
+totals tokens and cost per day. Run it on the VM, in the kit folder:
+
+```bash
+python3 daily_report.py                    # last 7 days, per member
+python3 daily_report.py --days 30          # last 30 days
+python3 daily_report.py --by model         # per model
+python3 daily_report.py --by member,model  # per member and model
+python3 daily_report.py --by day           # one total per day
+python3 daily_report.py --csv usage.csv    # also save as CSV (Excel, charts)
+```
+
+Dates are Singapore dates (`--tz` to change). Requests from deleted keys show as
+`(unknown/deleted)`. It needs per-request logging, so it shows nothing if
+`disable_spend_logs: true` is set in `config.yaml`.
+
+To get the CSV off the VM (from Cloud Shell):
+`gcloud compute scp llm-proxy:~/litellm-budget-proxy/usage.csv . --zone=$ZONE`
 
 ### How accurate is the cost tracking?
 
