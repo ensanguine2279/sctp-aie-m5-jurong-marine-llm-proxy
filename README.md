@@ -69,11 +69,97 @@ OpenAIOkHttpClient.builder().baseUrl("http://<proxy-host>:4000").apiKey("<backen
 Full examples with budget-error handling: `examples/python_client.py`,
 `examples/java/ProxyClientExample.java`.
 
+## Coding against the proxy
+
+LiteLLM speaks the OpenAI API, so **write normal OpenAI SDK code**. Requests,
+responses, streaming, tool/function calling, JSON/structured output and image
+inputs (vision) all pass through unchanged. LangChain, LlamaIndex and similar
+frameworks work too, because they accept a `base_url`.
+
+### Keep the proxy out of the code
+
+Both official SDKs read these environment variables automatically. Put them in
+a git-ignored `.env`, never in source:
+
+```bash
+OPENAI_BASE_URL=https://35-240-177-226.sslip.io
+OPENAI_API_KEY=<your member key>
+```
+
+```python
+client = OpenAI()                                    # Python
+```
+
+```java
+OpenAIClient client = OpenAIOkHttpClient.fromEnv();  // Java
+```
+
+The code is then identical to calling OpenAI directly. Switching between the
+proxy and the real API is an environment change, not a code change.
+
+### What's different
+
+| # | Concern | What to do |
+|---|---|---|
+| 1 | **Only listed models are allowed.** Calls to any model not in `config.yaml` → `model_list` *and* the key's `models` in `members.json` fail with "key not allowed to access model". | Add every model the app uses, **including the embedding model** for document retrieval (e.g. `text-embedding-3-small`), to both files, then restart LiteLLM and run `setup_keys.py --sync`. |
+| 2 | **New errors: rate limits and budgets.** Bulk jobs (log ingestion, embedding all SOPs) can hit `rpm_limit` (429) or a key's budget cap. | Batch many inputs per embedding request; retry 429s with backoff; catch budget errors and show a clear message, especially in the live demo. |
+| 3 | **Stateful OpenAI features** (Assistants, Files, Vector Stores, Batch API) are only partly supported, and stored objects stay tied to the real key. | Don't use them. Use chat completions + embeddings with your own vector store (the brief expects you to build retrieval anyway). |
+| 4 | **OpenAI Agents SDK tracing** uploads traces to OpenAI using the key, and fails with a proxy key. | `from agents import set_tracing_disabled; set_tracing_disabled(True)` |
+| 5 | **`drop_params: true`** in `config.yaml` silently drops parameters a model doesn't support, which can hide bugs. | Consider `false` during development. |
+| 6 | **Prompts pass through our VM** (Singapore). LiteLLM logs who called, which model, tokens and cost. | Be ready to explain this for PDPA. Check the dashboard's **Logs** page to confirm full prompt text isn't stored. |
+| 7 | **The demo depends on the VM.** | Before demo day, check the proxy is up and budgets have headroom. Keep a fallback key ready to switch to by changing the env vars. |
+
+Confirm with the instructor that putting a proxy in front of the class-provided
+endpoint is allowed.
+
 ## 4. Watch spending (admin)
 
 - `python spend_report.py` prints team and per-member spend vs. cap.
 - Dashboard: `http://<proxy-host>:4000/ui`, log in as `admin` / `UI_PASSWORD`.
   It shows spend per key and model, and a log of each request.
+
+### How accurate is the cost tracking?
+
+LiteLLM's costs are **close estimates, not OpenAI's bill**. It takes the token
+counts OpenAI returns with every response (input, output, cached and image
+tokens), which are exactly what OpenAI bills, and multiplies them by its own
+per-model price list. Only the price list can be wrong.
+
+| Source of error | Effect | Likelihood |
+|---|---|---|
+| LiteLLM's price list lags an OpenAI price change | Every call off by the same % | Low. LiteLLM fetches its latest price list at startup |
+| Discounted/special tiers (cached input, batch, flex, priority) | Small differences on those calls | Low for normal chat + embeddings |
+| Calls that bypass the proxy (real key used directly) | Not counted at all | Depends on discipline |
+| Failed or interrupted requests | Slight differences either way | Rare |
+| Spend is written to the DB in batches | Dashboard lags ~1 min | Always, harmless |
+
+Expect it to be within a few percent of the real figure. That's why the caps
+should sit a little below the real budget.
+
+**Check one call yourself.** LiteLLM returns the cost it recorded in a response header:
+
+```bash
+curl -s -D - -o /dev/null <HOST>/v1/chat/completions \
+  -H "Authorization: Bearer <member key>" -H "Content-Type: application/json" \
+  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Say hi"}],"max_tokens":20}' \
+  | grep -i "x-litellm-response-cost"
+```
+
+Run the same request without `-D - -o /dev/null` to see the `usage` token counts, then compare:
+
+```
+cost = input_tokens × input_price + output_tokens × output_price   (per-token prices from openai.com/api/pricing)
+```
+
+If they match, LiteLLM's price for that model is right.
+
+**Check against the real bill** (needs the instructor, since it requires OpenAI's
+usage dashboard or an admin key). After a week or so, compare the project's
+actual spend with the `spend_report.py` total. Investigate a gap of more than ~10%.
+
+**Rate limits** (requests per minute) are a separate thing and are enforced exactly
+by the proxy (`rpm_limit` / `tpm_limit` in `members.json`). OpenAI's own
+per-organization limits still apply on top.
 
 ## Managing members
 
