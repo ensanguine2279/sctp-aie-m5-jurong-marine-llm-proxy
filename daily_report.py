@@ -8,6 +8,7 @@ Run on the VM, in the kit folder (it queries Postgres through docker compose):
     python3 daily_report.py --by member,model  # per member AND model
     python3 daily_report.py --by day           # one total per day
     python3 daily_report.py --csv usage.csv    # also save the rows as CSV
+    python3 daily_report.py --member ian-tan   # one member (repeat --member for several)
 
 Dates are Singapore dates by default (--tz to change). Costs are LiteLLM's
 estimates (see README, "How accurate is the cost tracking?").
@@ -38,9 +39,13 @@ COLUMN_SQL = {
 NUMERIC = ("calls", "input_tokens", "output_tokens", "total_tokens", "cost_usd")
 
 
-def build_query(days, tz, dims):
+def build_query(days, tz, dims, members=None):
     day = f"""date(s."startTime" AT TIME ZONE 'UTC' AT TIME ZONE '{tz}')"""
     select = [f"{day} AS day"] + [f"{COLUMN_SQL[d]} AS {d}" for d in dims]
+    member_filter = ""
+    if members:
+        names = ", ".join("'" + m.replace("'", "''") + "'" for m in members)
+        member_filter = f"\n    AND v.key_alias IN ({names})"
     return f"""
 COPY (
   SELECT {", ".join(select)},
@@ -51,7 +56,7 @@ COPY (
          ROUND(COALESCE(SUM(s.spend), 0)::numeric, 6) AS cost_usd
   FROM "LiteLLM_SpendLogs" s
   LEFT JOIN "LiteLLM_VerificationToken" v ON v.token = s.api_key
-  WHERE s."startTime" >= (now() AT TIME ZONE 'UTC') - interval '{days} days'
+  WHERE s."startTime" >= (now() AT TIME ZONE 'UTC') - interval '{days} days'{member_filter}
   GROUP BY {", ".join(str(i + 1) for i in range(len(select)))}
   ORDER BY 1 DESC{"".join(f", {i + 2}" for i in range(len(dims)))}
 ) TO STDOUT WITH CSV HEADER
@@ -132,7 +137,13 @@ def main():
                    help="break each day down by: day (totals only), member, model, member,model")
     p.add_argument("--tz", default="Asia/Singapore", help="time zone for dates (default Asia/Singapore)")
     p.add_argument("--csv", metavar="FILE", help="also write the rows to this CSV file")
+    p.add_argument("--member", action="append", metavar="NAME",
+                   help="only this member (key alias); repeat for several. Quote names with spaces")
     args = p.parse_args()
+
+    for m in args.member or []:
+        if not re.fullmatch(r"[A-Za-z0-9 _.@\-]{1,64}", m):
+            sys.exit(f"Invalid member name: {m!r}")
 
     if not 1 <= args.days <= 3650:
         sys.exit("--days must be between 1 and 3650")
@@ -140,12 +151,17 @@ def main():
         sys.exit(f"Invalid time zone: {args.tz!r}")
 
     dims = GROUPINGS[args.by]
-    rows = run_query(build_query(args.days, args.tz, dims))
+    rows = run_query(build_query(args.days, args.tz, dims, args.member))
 
-    print(f"LiteLLM usage, last {args.days} day(s), dates in {args.tz}, by {args.by}\n")
+    who = f", member(s): {', '.join(args.member)}" if args.member else ""
+    print(f"LiteLLM usage, last {args.days} day(s), dates in {args.tz}, by {args.by}{who}\n")
     if not rows:
-        print("No requests in this period. (If calls were made, check that "
-              "`disable_spend_logs` is not set in config.yaml.)")
+        if args.member:
+            print("No requests for that member in this period. Check the name matches "
+                  "keys.json / members.json exactly (e.g. 'ian tan' vs 'ian-tan').")
+        else:
+            print("No requests in this period. (If calls were made, check that "
+                  "`disable_spend_logs` is not set in config.yaml.)")
     else:
         print_table(rows, dims)
         print("\nCosts are LiteLLM's estimates from list prices, not OpenAI's bill.")

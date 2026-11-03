@@ -131,6 +131,7 @@ python3 daily_report.py --by model         # per model
 python3 daily_report.py --by member,model  # per member and model
 python3 daily_report.py --by day           # one total per day
 python3 daily_report.py --csv usage.csv    # also save as CSV (Excel, charts)
+python3 daily_report.py --member ian-tan   # one member (repeat --member for several; quote names with spaces)
 ```
 
 Dates are Singapore dates (`--tz` to change). Requests from deleted keys show as
