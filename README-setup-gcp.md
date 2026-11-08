@@ -1,6 +1,6 @@
-# Deploying the Jurong Marine LLM budget proxy on Google Cloud
+# Deploying the Jurong Marine LLM proxy on Google Cloud
 
-How to run the LiteLLM budget proxy (this kit) on a Google Cloud Compute Engine
+How to run the LiteLLM proxy (this kit) on a Google Cloud Compute Engine
 VM with HTTPS, so every teammate and the Java backend can reach it.
 
 > **Our deployment:** `https://35-240-177-226.sslip.io` (VM `llm-proxy`, e2-small, asia-southeast1 / Singapore, Ubuntu 24.04 minimal, static IP `35.240.177.226`).
@@ -28,7 +28,7 @@ flowchart LR
 ## 0. Before you start
 
 - A Google Cloud project with billing enabled (new accounts get US$300 credit).
-- `litellm-budget-proxy.zip` (this kit).
+- `litellm-proxy.zip` (this kit).
 - The OpenAI key from the instructor.
 - Open **Cloud Shell** (the `>_` icon top-right in the console). All
   `gcloud` commands below run in Cloud Shell, **not** inside the VM.
@@ -79,7 +79,7 @@ Or use the console: VM → **Edit** → *Network tags* → add `llm-proxy` → *
 Upload the zip to Cloud Shell (⋮ menu → **Upload**), then:
 
 ```bash
-gcloud compute scp litellm-budget-proxy.zip llm-proxy:~ --zone=$ZONE
+gcloud compute scp litellm-proxy.zip llm-proxy:~ --zone=$ZONE
 gcloud compute ssh llm-proxy --zone=$ZONE
 ```
 
@@ -116,7 +116,7 @@ free -h      # Swap should show 2.0Gi
 Unpack the kit:
 
 ```bash
-unzip litellm-budget-proxy.zip && cd litellm-budget-proxy
+unzip litellm-proxy.zip && cd litellm-proxy
 ```
 
 ---
@@ -231,7 +231,7 @@ client = OpenAI(base_url="https://35-240-177-226.sslip.io", api_key="<member key
 
 ---
 
-## Day-to-day operations (inside the VM, in `~/litellm-budget-proxy`)
+## Day-to-day operations (inside the VM, in `~/litellm-proxy`)
 
 | Task | Command |
 |---|---|
