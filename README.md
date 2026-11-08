@@ -1,4 +1,4 @@
-# Jurong Marine LLM budget proxy
+# Jurong Marine LLM proxy
 
 One server holds the instructor's OpenAI key. Everyone else (Python scripts,
 the Java backend) talks to this proxy with their **own virtual key**, and the
