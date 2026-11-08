@@ -14,14 +14,16 @@ model_list:
       api_key: os.environ/OPENAI_API_KEY
 
   # Add more models in the same shape, e.g.:
-  # - model_name: text-embedding-3-small
-  #   litellm_params:
-  #     model: openai/text-embedding-3-small
-  #     api_key: os.environ/OPENAI_API_KEY
+  - model_name: text-embedding-3-small
+    litellm_params:
+      model: openai/text-embedding-3-small
+      api_key: os.environ/OPENAI_API_KEY
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
   database_url: os.environ/DATABASE_URL
+  store_model_in_db: true
+  store_prompts_in_spend_logs: true
 
 litellm_settings:
   # Global cap across ALL keys. Once total spend reaches this, every request
@@ -30,3 +32,5 @@ litellm_settings:
   max_budget: 50.0        # USD
   budget_duration: 30d    # resets every 30 days; remove for a one-off lifetime cap
   drop_params: true       # silently drop params a model doesn't support
+  json_logs: true
+  request_correlation_in_logs: true
